@@ -10,6 +10,18 @@ import { GoogleGenAI } from "@google/genai";
 // --- Constants ---
 const INITIAL_BACKUP_BG = "https://images.unsplash.com/photo-1514467958574-23b9c81b37ec?q=80&w=2070&auto=format&fit=crop";
 
+// --- Helper for safe localStorage ---
+const safeStorage = {
+  get: (key: string, fallback: string) => {
+    try { return localStorage.getItem(key) || fallback; } 
+    catch { return fallback; }
+  },
+  set: (key: string, value: string) => {
+    try { localStorage.setItem(key, value); } 
+    catch (e) { console.error("Storage write failed", e); }
+  }
+};
+
 // --- Translations ---
 const translations = {
   en: {
@@ -166,7 +178,12 @@ const translations = {
 const aiService = {
   generatePirateHero: async (customPrompt?: string): Promise<string | null> => {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const apiKey = process.env.API_KEY;
+      if (!apiKey) {
+        console.warn("API Key is missing. Generation disabled.");
+        return null;
+      }
+      const ai = new GoogleGenAI({ apiKey });
       const prompt = customPrompt || "Legendary epic digital art: A massive black ghost pirate ship with glowing electric-cyan magic runes on the hull, floating in a cosmic dark stormy ocean at night. Extreme detail, cinematic 8k resolution, volumetric lighting, 16:9.";
       
       const response = await ai.models.generateContent({
@@ -200,10 +217,9 @@ const GlobalBackground: React.FC<{ heroImg: string }> = ({ heroImg }) => {
       <img 
         key={heroImg} 
         src={heroImg} 
-        alt="Pirate Atmosphere" 
-        className="w-full h-full object-cover opacity-80 animate-in fade-in duration-1000 scale-100" 
+        alt="Atmosphere" 
+        className="w-full h-full object-cover opacity-80 animate-in fade-in duration-1000" 
       />
-      {/* Dynamic Overlays */}
       <div className="absolute inset-0 bg-gradient-to-r from-black via-black/40 to-transparent z-10" />
       <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10" />
       <div className="absolute inset-0 bg-black/30 z-10" />
@@ -237,7 +253,7 @@ const Navbar: React.FC<{ activeView: AppView; onNavigate: (v: AppView) => void; 
           <button onClick={() => onNavigate('contact')} className={`transition-colors ${isSelected('contact')}`}>{t.inquiry}</button>
         </div>
         <div className="flex items-center gap-4">
-          <LanguageSwitcher current={lang} onChange={l => onLangChange(l)} />
+          <LanguageSwitcher current={lang} onChange={onLangChange} />
           {isAdmin ? (
             <button onClick={() => onNavigate('admin-dashboard')} className="px-4 py-2 bg-gradient-pirate rounded-full text-[10px] font-black transition-all text-white border-none uppercase tracking-widest shadow-lg">{t.dashboard}</button>
           ) : (
@@ -353,7 +369,10 @@ const AdminDashboard: React.FC<{
   const [editingProject, setEditingProject] = useState<Partial<Project> | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
-  const [history, setHistory] = useState<string[]>(() => JSON.parse(localStorage.getItem('pirate_hero_history') || '[]'));
+  const [history, setHistory] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('pirate_hero_history') || '[]'); } 
+    catch { return []; }
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = translations[lang].admin;
 
@@ -362,7 +381,7 @@ const AdminDashboard: React.FC<{
     const result = await aiService.generatePirateHero(customPrompt);
     if (result) {
       const newHistory = [result, ...history].slice(0, 12);
-      localStorage.setItem('pirate_hero_history', JSON.stringify(newHistory));
+      safeStorage.set('pirate_hero_history', JSON.stringify(newHistory));
       setHistory(newHistory);
       setAsHero(result);
     }
@@ -376,7 +395,7 @@ const AdminDashboard: React.FC<{
       reader.onloadend = () => {
         const base64String = reader.result as string;
         const newHistory = [base64String, ...history].slice(0, 12);
-        localStorage.setItem('pirate_hero_history', JSON.stringify(newHistory));
+        safeStorage.set('pirate_hero_history', JSON.stringify(newHistory));
         setHistory(newHistory);
         setAsHero(base64String);
       };
@@ -385,13 +404,13 @@ const AdminDashboard: React.FC<{
   };
 
   const setAsHero = (img: string) => {
-    localStorage.setItem('pirate_hero_img_static', img);
+    safeStorage.set('pirate_hero_img_static', img);
     setHeroImg(img);
   };
 
   const deleteFromHistory = (index: number) => {
     const newHistory = history.filter((_, i) => i !== index);
-    localStorage.setItem('pirate_hero_history', JSON.stringify(newHistory));
+    safeStorage.set('pirate_hero_history', JSON.stringify(newHistory));
     setHistory(newHistory);
   };
 
@@ -541,13 +560,17 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [lang, setLang] = useState<Language>(() => (localStorage.getItem('zenith_lang') as Language) || 'ru');
-  const [heroImg, setHeroImg] = useState<string>(() => localStorage.getItem('pirate_hero_img_static') || INITIAL_BACKUP_BG);
+  const [lang, setLang] = useState<Language>(() => (safeStorage.get('pirate_lang', 'ru') as Language));
+  const [heroImg, setHeroImg] = useState<string>(() => safeStorage.get('pirate_hero_img_static', INITIAL_BACKUP_BG));
 
   useEffect(() => {
     refreshData();
     setIsAdmin(authService.isAuthenticated());
   }, []);
+
+  useEffect(() => {
+    safeStorage.set('pirate_lang', lang);
+  }, [lang]);
 
   const refreshData = () => { setProjects(dataService.getProjects()); };
   const handleNavigate = (v: AppView) => { setView(v); window.scrollTo({ top: 0, behavior: 'smooth' }); };
