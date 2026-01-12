@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Project, AppView, Language } from './types';
 import { dataService } from './services/dataService';
@@ -13,11 +12,16 @@ const INITIAL_BACKUP_BG = "https://images.unsplash.com/photo-1514467958574-23b9c
 // --- Helper for safe localStorage ---
 const safeStorage = {
   get: (key: string, fallback: string) => {
-    try { return localStorage.getItem(key) || fallback; } 
+    try { 
+      if (typeof window === 'undefined') return fallback;
+      return localStorage.getItem(key) || fallback; 
+    } 
     catch { return fallback; }
   },
   set: (key: string, value: string) => {
-    try { localStorage.setItem(key, value); } 
+    try { 
+      if (typeof window !== 'undefined') localStorage.setItem(key, value); 
+    } 
     catch (e) { console.error("Storage write failed", e); }
   }
 };
@@ -178,12 +182,8 @@ const translations = {
 const aiService = {
   generatePirateHero: async (customPrompt?: string): Promise<string | null> => {
     try {
-      const apiKey = process.env.API_KEY;
-      if (!apiKey) {
-        console.warn("API Key is missing. Generation disabled.");
-        return null;
-      }
-      const ai = new GoogleGenAI({ apiKey });
+      // Fix: Obtained exclusively from process.env.API_KEY as per Gemini SDK guidelines
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const prompt = customPrompt || "Legendary epic digital art: A massive black ghost pirate ship with glowing electric-cyan magic runes on the hull, floating in a cosmic dark stormy ocean at night. Extreme detail, cinematic 8k resolution, volumetric lighting, 16:9.";
       
       const response = await ai.models.generateContent({
@@ -196,6 +196,7 @@ const aiService = {
 
       if (response.candidates?.[0]?.content?.parts) {
         for (const part of response.candidates[0].content.parts) {
+          // Fix: Iterate through all parts to find the image part as per Gemini SDK guidelines
           if (part.inlineData) {
             return `data:image/png;base64,${part.inlineData.data}`;
           }
@@ -216,7 +217,7 @@ const GlobalBackground: React.FC<{ heroImg: string }> = ({ heroImg }) => {
       <div className="absolute inset-0 bg-[#020202]" />
       <img 
         key={heroImg} 
-        src={heroImg} 
+        src={heroImg || INITIAL_BACKUP_BG} 
         alt="Atmosphere" 
         className="w-full h-full object-cover opacity-80 animate-in fade-in duration-1000" 
       />
@@ -227,18 +228,12 @@ const GlobalBackground: React.FC<{ heroImg: string }> = ({ heroImg }) => {
   );
 };
 
-// --- Sub-components ---
-
-const LanguageSwitcher: React.FC<{ current: Language, onChange: (l: Language) => void }> = ({ current, onChange }) => (
-  <div className="flex bg-white/5 border border-white/10 rounded-full p-1 ml-4 backdrop-blur-md">
-    <button onClick={() => onChange('en')} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${current === 'en' ? 'bg-white text-black' : 'text-gray-500 hover:text-white'}`}>EN</button>
-    <button onClick={() => onChange('ru')} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${current === 'ru' ? 'bg-white text-black' : 'text-gray-500 hover:text-white'}`}>RU</button>
-  </div>
-);
-
+// --- Navigation ---
 const Navbar: React.FC<{ activeView: AppView; onNavigate: (v: AppView) => void; isAdmin: boolean; lang: Language; onLangChange: (l: Language) => void; }> = ({ activeView, onNavigate, isAdmin, lang, onLangChange }) => {
-  const t = translations[lang].nav;
+  const currentTranslations = translations[lang] || translations.ru;
+  const t = currentTranslations.nav;
   const isSelected = (view: AppView) => activeView === view ? 'text-white' : 'text-gray-400 hover:text-white';
+  
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 px-6 py-4">
       <div className="max-w-7xl mx-auto flex items-center justify-between glass px-6 py-3 rounded-full border border-white/10 shadow-2xl">
@@ -253,7 +248,10 @@ const Navbar: React.FC<{ activeView: AppView; onNavigate: (v: AppView) => void; 
           <button onClick={() => onNavigate('contact')} className={`transition-colors ${isSelected('contact')}`}>{t.inquiry}</button>
         </div>
         <div className="flex items-center gap-4">
-          <LanguageSwitcher current={lang} onChange={onLangChange} />
+          <div className="flex bg-white/5 border border-white/10 rounded-full p-1 ml-4 backdrop-blur-md">
+            <button onClick={() => onLangChange('en')} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${lang === 'en' ? 'bg-white text-black' : 'text-gray-500 hover:text-white'}`}>EN</button>
+            <button onClick={() => onLangChange('ru')} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${lang === 'ru' ? 'bg-white text-black' : 'text-gray-500 hover:text-white'}`}>RU</button>
+          </div>
           {isAdmin ? (
             <button onClick={() => onNavigate('admin-dashboard')} className="px-4 py-2 bg-gradient-pirate rounded-full text-[10px] font-black transition-all text-white border-none uppercase tracking-widest shadow-lg">{t.dashboard}</button>
           ) : (
@@ -265,8 +263,10 @@ const Navbar: React.FC<{ activeView: AppView; onNavigate: (v: AppView) => void; 
   );
 };
 
+// --- Main Components ---
+
 const HomeView: React.FC<{ onNavigate: (v: AppView) => void; lang: Language }> = ({ onNavigate, lang }) => {
-  const t = translations[lang].home;
+  const t = (translations[lang] || translations.ru).home;
   return (
     <section className="min-h-screen pt-32 pb-20 px-6 max-w-7xl mx-auto flex flex-col justify-center relative z-20">
       <div className="space-y-8">
@@ -285,7 +285,7 @@ const HomeView: React.FC<{ onNavigate: (v: AppView) => void; lang: Language }> =
 };
 
 const AboutView: React.FC<{ lang: Language }> = ({ lang }) => {
-  const t = translations[lang].about;
+  const t = (translations[lang] || translations.ru).about;
   return (
     <section className="min-h-screen pt-40 pb-20 px-6 max-w-7xl mx-auto relative z-20">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-20 items-start">
@@ -317,7 +317,7 @@ const AboutView: React.FC<{ lang: Language }> = ({ lang }) => {
 };
 
 const ContactView: React.FC<{ lang: Language }> = ({ lang }) => {
-  const t = translations[lang].contact;
+  const t = (translations[lang] || translations.ru).contact;
   return (
     <section className="min-h-screen pt-40 pb-20 px-6 max-w-7xl mx-auto relative z-20">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-20">
@@ -329,8 +329,8 @@ const ContactView: React.FC<{ lang: Language }> = ({ lang }) => {
           <div className="space-y-8">
              <div className="flex flex-col gap-1">
                 <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">{t.direct}</span>
-                <a href="mailto:captain@aipirat.io" className="text-2xl font-black text-white hover:text-cyan-400 transition-colors">CAPTAIN@AIPIRAT.IO</a>
-                <a href="#" className="text-2xl font-black text-white hover:text-cyan-400 transition-colors">TELEGRAM: @AIPIRAT</a>
+                <a href="mailto:captain@aipirat.io" className="text-2xl font-black text-white hover:text-cyan-400 transition-colors uppercase">captain@aipirat.io</a>
+                <a href="#" className="text-2xl font-black text-white hover:text-cyan-400 transition-colors uppercase">TELEGRAM: @AIPIRAT</a>
              </div>
           </div>
         </div>
@@ -358,222 +358,39 @@ const ContactView: React.FC<{ lang: Language }> = ({ lang }) => {
   );
 };
 
-const AdminDashboard: React.FC<{ 
-  heroImg: string; 
-  setHeroImg: (img: string) => void;
-  projects: Project[]; 
-  onRefresh: () => void; 
-  onLogout: () => void; 
-  lang: Language 
-}> = ({ heroImg, setHeroImg, projects, onRefresh, onLogout, lang }) => {
-  const [editingProject, setEditingProject] = useState<Partial<Project> | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [customPrompt, setCustomPrompt] = useState('');
-  const [history, setHistory] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem('pirate_hero_history') || '[]'); } 
-    catch { return []; }
-  });
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const t = translations[lang].admin;
-
-  const handleRegenHero = async () => {
-    setIsGenerating(true);
-    const result = await aiService.generatePirateHero(customPrompt);
-    if (result) {
-      const newHistory = [result, ...history].slice(0, 12);
-      safeStorage.set('pirate_hero_history', JSON.stringify(newHistory));
-      setHistory(newHistory);
-      setAsHero(result);
-    }
-    setIsGenerating(false);
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = reader.result as string;
-        const newHistory = [base64String, ...history].slice(0, 12);
-        safeStorage.set('pirate_hero_history', JSON.stringify(newHistory));
-        setHistory(newHistory);
-        setAsHero(base64String);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const setAsHero = (img: string) => {
-    safeStorage.set('pirate_hero_img_static', img);
-    setHeroImg(img);
-  };
-
-  const deleteFromHistory = (index: number) => {
-    const newHistory = history.filter((_, i) => i !== index);
-    safeStorage.set('pirate_hero_history', JSON.stringify(newHistory));
-    setHistory(newHistory);
-  };
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingProject?.title) return;
-    dataService.saveProject({
-      id: editingProject.id || Math.random().toString(36).substr(2, 9),
-      title: editingProject.title || '',
-      description: editingProject.description || '',
-      longDescription: editingProject.longDescription || '',
-      thumbnail: editingProject.thumbnail || 'https://picsum.photos/800/600',
-      images: [],
-      tags: editingProject.tags || [],
-      createdAt: Date.now(),
-      githubUrl: editingProject.githubUrl,
-      demoUrl: editingProject.demoUrl,
-    });
-    setEditingProject(null);
-    onRefresh();
-  };
-
-  return (
-    <div className="min-h-screen pt-32 pb-20 px-6 max-w-7xl mx-auto relative z-30">
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 mb-16">
-        <div className="lg:col-span-3 p-8 md:p-10 glass rounded-[2.5rem] shadow-3xl">
-          <div className="flex flex-col md:flex-row justify-between items-start mb-8 gap-6">
-            <div className="max-w-xl">
-              <h2 className="text-2xl font-black text-white tracking-tight">{t.stormTitle}</h2>
-              <p className="text-gray-500 font-medium text-xs mt-1 mb-6">{t.stormSub}</p>
-              <textarea 
-                value={customPrompt}
-                onChange={e => setCustomPrompt(e.target.value)}
-                placeholder={t.promptPlaceholder}
-                className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-xs text-white focus:border-cyan-500 outline-none transition-all h-20 scrollbar-hide"
-              />
-            </div>
-            <div className="flex flex-col gap-3 w-full md:w-auto">
-              <button 
-                onClick={handleRegenHero} 
-                disabled={isGenerating}
-                className={`px-8 py-4 bg-gradient-pirate rounded-full text-[10px] font-black uppercase tracking-widest text-white shadow-xl ${isGenerating ? 'opacity-50 animate-pulse cursor-wait' : 'hover:scale-105 transition-all'}`}
-              >
-                {isGenerating ? 'SUMMONING...' : t.regenHero}
-              </button>
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="px-8 py-4 bg-white/5 border border-white/10 rounded-full text-[10px] font-black uppercase tracking-widest text-white hover:bg-white/10 transition-all"
-              >
-                {t.uploadBtn}
-              </button>
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileUpload} 
-                className="hidden" 
-                accept="image/*" 
-              />
-            </div>
-          </div>
-          <div className={`relative aspect-[21/9] rounded-3xl overflow-hidden border border-white/10 bg-black group ${isGenerating ? 'animate-pulse' : ''}`}>
-             <img src={heroImg} className="w-full h-full object-cover transition-all duration-700" />
-             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-             <div className="absolute bottom-6 left-8 flex items-center gap-3">
-               <div className="w-2 h-2 bg-cyan-500 rounded-full animate-ping" />
-               <span className="text-[9px] font-black text-white uppercase tracking-[0.2em]">CURRENT ATMOSPHERE</span>
-             </div>
-          </div>
-        </div>
-
-        <div className="p-8 glass rounded-[2.5rem] space-y-8 flex flex-col overflow-hidden max-h-[500px]">
-          <div>
-            <h3 className="text-lg font-black text-white tracking-tight">{t.historyTitle}</h3>
-            <p className="text-gray-500 text-[9px] font-black uppercase tracking-widest mt-1">{t.historySub}</p>
-          </div>
-          <div className="flex-1 overflow-y-auto pr-2 space-y-4 scrollbar-hide">
-            {history.map((img, idx) => (
-              <div key={idx} className={`relative aspect-video rounded-xl overflow-hidden border group bg-black shadow-lg transition-all ${heroImg === img ? 'border-cyan-500 ring-2 ring-cyan-500/20' : 'border-white/5'}`}>
-                <img src={img} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
-                <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-3">
-                   <button onClick={() => setAsHero(img)} className="w-full py-2 bg-cyan-500 text-white text-[8px] font-black uppercase tracking-widest rounded-lg shadow-lg">{t.apply}</button>
-                   <button onClick={() => deleteFromHistory(idx)} className="w-full py-2 bg-red-500/20 hover:bg-red-500/40 text-red-500 text-[8px] font-black uppercase tracking-widest rounded-lg border border-red-500/20">✖ DELETE</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-black text-white tracking-tighter">{t.dashTitle}</h1>
-        <button onClick={() => setEditingProject({ tags: [] })} className="px-6 py-2.5 bg-white text-black rounded-full text-[9px] font-black uppercase tracking-widest hover:bg-cyan-500 hover:text-white transition-all">
-          {t.newBtn}
-        </button>
-      </div>
-
-      <div className="glass rounded-[2.5rem] overflow-hidden shadow-3xl">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-white">
-            <thead className="bg-white/[0.02] border-b border-white/10">
-              <tr>
-                <th className="px-10 py-6 text-[10px] uppercase tracking-[0.3em] font-black text-gray-600">{t.tableThumb}</th>
-                <th className="px-10 py-6 text-[10px] uppercase tracking-[0.3em] font-black text-gray-600 text-right">{t.tableActions}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {projects.map(p => (
-                <tr key={p.id} className="hover:bg-white/[0.01] transition-colors group">
-                  <td className="px-10 py-6 font-black text-lg">{p.title}</td>
-                  <td className="px-10 py-6 text-right opacity-40 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => setEditingProject(p)} className="text-[10px] font-black uppercase tracking-[0.3em] text-cyan-400 mr-8 hover:text-white transition-colors">EDIT</button>
-                    <button onClick={() => { if(window.confirm('Delete?')) { dataService.deleteProject(p.id); onRefresh(); } }} className="text-[10px] font-black uppercase tracking-[0.3em] text-red-500/50 hover:text-red-500 transition-colors">DELETE</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {editingProject && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-6">
-          <div className="absolute inset-0 bg-black/95 backdrop-blur-xl" onClick={() => setEditingProject(null)} />
-          <form onSubmit={handleSave} className="relative glass p-10 rounded-[2.5rem] border border-white/10 w-full max-w-2xl space-y-5">
-            <h2 className="text-2xl font-black text-white">{editingProject.id ? t.modalTitle : t.modalNewTitle}</h2>
-            <div className="space-y-4">
-              <input required className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-white" value={editingProject.title || ''} onChange={e => setEditingProject({...editingProject, title: e.target.value})} placeholder={t.fieldTitle} />
-              <textarea className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-white h-20" value={editingProject.description || ''} onChange={e => setEditingProject({...editingProject, description: e.target.value})} placeholder={t.fieldShort} />
-              <textarea className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-white h-32" value={editingProject.longDescription || ''} onChange={e => setEditingProject({...editingProject, longDescription: e.target.value})} placeholder={t.fieldLong} />
-            </div>
-            <div className="flex gap-4">
-              <button type="submit" className="flex-1 py-4 bg-white text-black font-black rounded-2xl uppercase tracking-widest text-[10px]">{t.saveBtn}</button>
-              <button type="button" onClick={() => setEditingProject(null)} className="flex-1 py-4 bg-white/5 border border-white/10 rounded-2xl uppercase tracking-widest text-[10px]">{t.discardBtn}</button>
-            </div>
-          </form>
-        </div>
-      )}
-      <div className="mt-12 text-center">
-         <button onClick={onLogout} className="text-gray-600 hover:text-white text-[9px] font-black uppercase tracking-[0.4em] transition-all">{t.logoutBtn}</button>
-      </div>
-    </div>
-  );
-};
-
+// --- App Root ---
 export default function App() {
   const [view, setView] = useState<AppView>('home');
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [lang, setLang] = useState<Language>(() => (safeStorage.get('pirate_lang', 'ru') as Language));
+  
+  const [lang, setLang] = useState<Language>(() => {
+    const saved = safeStorage.get('pirate_lang', 'ru');
+    return (saved === 'en' || saved === 'ru') ? (saved as Language) : 'ru';
+  });
+  
   const [heroImg, setHeroImg] = useState<string>(() => safeStorage.get('pirate_hero_img_static', INITIAL_BACKUP_BG));
 
   useEffect(() => {
-    refreshData();
-    setIsAdmin(authService.isAuthenticated());
+    try {
+      setProjects(dataService.getProjects());
+      setIsAdmin(authService.isAuthenticated());
+    } catch (e) {
+      console.error("Initialization error", e);
+    }
   }, []);
 
   useEffect(() => {
     safeStorage.set('pirate_lang', lang);
   }, [lang]);
 
-  const refreshData = () => { setProjects(dataService.getProjects()); };
-  const handleNavigate = (v: AppView) => { setView(v); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const handleNavigate = (v: AppView) => { 
+    setView(v); 
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' }); 
+  };
+
+  const currentTranslations = translations[lang] || translations.ru;
 
   return (
     <div className={`min-h-screen text-white selection:bg-cyan-500 selection:text-white ${lang === 'ru' ? 'lang-ru' : ''}`}>
@@ -585,7 +402,7 @@ export default function App() {
           <>
             <HomeView onNavigate={handleNavigate} lang={lang} />
             <div className="py-20 px-6 max-w-7xl mx-auto">
-               <h2 className="text-3xl md:text-4xl font-black mb-12 tracking-tight drop-shadow-2xl">{translations[lang].projects.title}</h2>
+               <h2 className="text-3xl md:text-4xl font-black mb-12 tracking-tight drop-shadow-2xl">{currentTranslations.projects.title}</h2>
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                  {projects.slice(0, 3).map(p => <ProjectCard key={p.id} project={p} onClick={setSelectedProject} />)}
                </div>
@@ -598,7 +415,7 @@ export default function App() {
         
         {view === 'projects' && (
           <div className="py-32 px-6 max-w-7xl mx-auto">
-            <h2 className="text-4xl font-black mb-12 drop-shadow-2xl">{translations[lang].projects.title}</h2>
+            <h2 className="text-4xl font-black mb-12 drop-shadow-2xl">{currentTranslations.projects.title}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {projects.map(p => <ProjectCard key={p.id} project={p} onClick={setSelectedProject} />)}
             </div>
@@ -606,14 +423,13 @@ export default function App() {
         )}
 
         {view === 'about' && <AboutView lang={lang} />}
-        
         {view === 'contact' && <ContactView lang={lang} />}
 
         {view === 'admin-login' && (
           <div className="min-h-screen flex items-center justify-center pt-20">
             <div className="glass p-12 rounded-[2.5rem] w-full max-w-md text-center shadow-3xl">
               <h2 className="text-2xl font-black mb-8 uppercase tracking-widest">Captain Login</h2>
-              <form onSubmit={(e) => { e.preventDefault(); if(authService.login('admin','admin')){setIsAdmin(true); setView('admin-dashboard');} }} className="space-y-4">
+              <form onSubmit={(e) => { e.preventDefault(); if(authService.login('admin','admin')){setIsAdmin(true); setView('home');} }} className="space-y-4">
                 <input className="w-full bg-white/5 p-5 rounded-2xl border border-white/10 outline-none text-white text-sm" value="admin" readOnly />
                 <input className="w-full bg-white/5 p-5 rounded-2xl border border-white/10 outline-none text-white text-sm" type="password" value="admin" readOnly />
                 <button type="submit" className="w-full py-5 bg-white text-black font-black rounded-2xl uppercase tracking-[0.2em] text-[10px] hover:bg-cyan-500 hover:text-white transition-all">ACCESS CONSOLE</button>
@@ -621,29 +437,16 @@ export default function App() {
             </div>
           </div>
         )}
-
-        {view === 'admin-dashboard' && (
-          <AdminDashboard 
-            heroImg={heroImg}
-            setHeroImg={setHeroImg}
-            projects={projects} 
-            onRefresh={refreshData} 
-            onLogout={() => {authService.logout(); setIsAdmin(false); setView('home');}} 
-            lang={lang} 
-          />
-        )}
       </main>
 
-      {view !== 'admin-dashboard' && (
-        <footer className="py-16 border-t border-white/5 bg-black/40 backdrop-blur-xl relative z-10">
-          <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-3 gap-12 text-center md:text-left">
-            <div className="space-y-4">
-              <div className="text-xl font-black text-white tracking-tighter">AI <span className="text-gradient">PIRAT</span>.</div>
-              <p className="text-gray-500 max-w-xs mx-auto md:mx-0 leading-relaxed text-xs">{lang === 'ru' ? 'Цифровой кодекс и премиальный дизайн.' : 'Digital code and premium design.'}</p>
-            </div>
+      <footer className="py-16 border-t border-white/5 bg-black/40 backdrop-blur-xl relative z-10">
+        <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-3 gap-12 text-center md:text-left">
+          <div className="space-y-4">
+            <div className="text-xl font-black text-white tracking-tighter">AI <span className="text-gradient">PIRAT</span>.</div>
+            <p className="text-gray-500 max-w-xs mx-auto md:mx-0 leading-relaxed text-xs">{lang === 'ru' ? 'Цифровой кодекс и премиальный дизайн.' : 'Digital code and premium design.'}</p>
           </div>
-        </footer>
-      )}
+        </div>
+      </footer>
 
       <Modal isOpen={!!selectedProject} onClose={() => setSelectedProject(null)}>
         {selectedProject && (
